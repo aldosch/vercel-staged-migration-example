@@ -30,6 +30,21 @@ Three hostnames are involved:
       "source": "/:path*",
       "destination": "https://legacy.example.com/:path*"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "retired\\.example\\.com" }],
+      "destination": "https://new.example.com/en-in/:path*",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "retired\\.example\\.com" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
+    }
   ]
 }
 ```
@@ -63,13 +78,14 @@ Three hostnames are involved:
 }
 ```
 
-What the go-live config does:
+The `redirects` and `headers` blocks are identical in both configs; the rewrites are what change on go-live day:
 
-- **Rewrite** — a negative lookahead, `(?!en-in/)`, makes the catch-all match everything *except* paths starting with `en-in/`. Those requests proxy to the legacy origin. The new app handles `en-in/` paths itself.
-- **Redirect** — requests arriving with the retired hostname are permanently redirected (308) to the new domain with the path preserved. The `has` / `host` condition scopes the redirect to that hostname only, so other domains and preview URLs are untouched.
+- **Interim rewrite** — a plain catch-all proxies every request to the legacy origin. The project mirrors the live site.
+- **Go-live rewrite** — a negative lookahead, `(?!en-in/)`, makes the catch-all match everything *except* paths starting with `en-in/`. Those requests proxy to the legacy origin. The new app handles `en-in/` paths itself.
+- **Redirect** — requests arriving with the retired hostname are permanently redirected (308) to the new domain with the path preserved. The `has` / `host` condition scopes the redirect to that hostname only, so other domains and preview URLs are untouched. Redirects run before rewrites, so the retired-domain redirect applies even while the catch-all rewrite is in place.
 - **Header** — requests on the retired hostname get `X-Robots-Tag: noindex`, so search engines drop the old URLs instead of ranking them alongside the new ones.
 
-If the old domain is not being retired at cutover, ship the rewrites first and add the `redirects` and `headers` blocks as their own change when it retires. Redirects run before rewrites, so the retired-domain redirect applies even while the catch-all rewrite is in place.
+If the old domain's retirement is not decided yet, remove the `redirects` and `headers` blocks from both files and add them back as their own change when it is.
 
 One edge case to check: the lookahead excludes `en-in/` with a trailing slash. A bare `/en-in` (no trailing slash) still matches the rewrite and proxies to the legacy origin. Test it, and adjust the pattern to `(?!en-in($|/))` if that matters for your routing.
 
@@ -96,7 +112,7 @@ If the retired domain is already added to the project, check its redirect with `
 
 ## Retiring the old domain
 
-The permanent redirect and noindex header for the retired hostname ship in `vercel.go-live.json`. When an old domain should stop serving entirely and its traffic should land on the new site, add it to the Vercel project and use a hostname-scoped redirect plus a noindex header, so visitors land in the right place and search engines stop ranking the old URLs. See the go-live config above for the pattern.
+The permanent redirect and noindex header for the retired hostname ship in both configs, so they are already in place whenever the old domain starts resolving to Vercel. When an old domain should stop serving entirely and its traffic should land on the new site, add it to the Vercel project and use a hostname-scoped redirect plus a noindex header, so visitors land in the right place and search engines stop ranking the old URLs. See either config above for the pattern.
 
 The `has` / `host` condition scopes both rules to that hostname only, so other domains and preview URLs are untouched. Status code 308 tells search engines the move is permanent. If the old domain's retirement is not decided yet, move the `redirects` and `headers` blocks out of `vercel.json` and add them in a separate deploy once it is.
 
