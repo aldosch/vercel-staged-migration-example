@@ -44,39 +44,7 @@ Three hostnames are involved:
       "source": "/:path((?!en-in/).*)",
       "destination": "https://legacy.example.com/:path*"
     }
-  ]
-}
-```
-
-What the go-live config does: a negative lookahead, `(?!en-in/)`, makes the catch-all match everything *except* paths starting with `en-in/`. Those requests proxy to the legacy origin. The new app handles `en-in/` paths itself.
-
-One edge case to check: the lookahead excludes `en-in/` with a trailing slash. A bare `/en-in` (no trailing slash) still matches the rewrite and proxies to the legacy origin. Test it, and adjust the pattern to `(?!en-in($|/))` if that matters for your routing.
-
-This example is a static page for simplicity. The same `vercel.json` approach works with any framework. Rewrites to external origins are handled at Vercel's edge, before your application runs, so they apply regardless of framework and add no compute cost. If your application is Next.js, keep using `next.config` for application-internal routes, and put external-origin rewrites in `vercel.json`.
-
-## Testing before any DNS change
-
-Test everything on the production `*.vercel.app` domain first:
-
-1. Deploy phase 1 and open `https://<your-project>.vercel.app/`. You should see the legacy site, not the new app. If you see the new app's placeholder, the rewrite is not matching.
-2. Spot-check a handful of deep paths from the legacy site, including ones with query strings.
-3. Spot-check a deep path and one with a query string using curl:
-
-```sh
-curl -sI 'https://<your-project>.vercel.app/some-path?ref=test'
-```
-
-4. Move the production domain to Vercel (days before go-live, per phase 1) and confirm visitors see no change. DNS records to point at Vercel are shown in the project's **Settings → Domains** when you add the domain.
-5. On go-live day, deploy the go-live config. Verify `en-in/` serves the new app and other paths still serve legacy content.
-
-`public/index.html` in this repo is a placeholder page that says as much. It is what you see whenever the rewrite is not active.
-
-## Retiring the old domain (optional, later)
-
-When an old domain should stop serving entirely and its traffic should land on the new site, add it to the Vercel project and use a hostname-scoped redirect plus a noindex header, so visitors land in the right place and search engines stop ranking the old URLs:
-
-```json
-{
+  ],
   "redirects": [
     {
       "source": "/:path*",
@@ -95,7 +63,42 @@ When an old domain should stop serving entirely and its traffic should land on t
 }
 ```
 
-The `has` / `host` condition scopes both rules to that hostname only, so other domains and preview URLs are untouched. This is intentionally not part of either config in this repo; add it as its own change when the old domain's future is settled.
+What the go-live config does:
+
+- **Rewrite** — a negative lookahead, `(?!en-in/)`, makes the catch-all match everything *except* paths starting with `en-in/`. Those requests proxy to the legacy origin. The new app handles `en-in/` paths itself.
+- **Redirect** — requests arriving with the retired hostname are permanently redirected (308) to the new domain with the path preserved. The `has` / `host` condition scopes the redirect to that hostname only, so other domains and preview URLs are untouched.
+- **Header** — requests on the retired hostname get `X-Robots-Tag: noindex`, so search engines drop the old URLs instead of ranking them alongside the new ones.
+
+If the old domain is not being retired at cutover, ship the rewrites first and add the `redirects` and `headers` blocks as their own change when it retires. Redirects run before rewrites, so the retired-domain redirect applies even while the catch-all rewrite is in place.
+
+One edge case to check: the lookahead excludes `en-in/` with a trailing slash. A bare `/en-in` (no trailing slash) still matches the rewrite and proxies to the legacy origin. Test it, and adjust the pattern to `(?!en-in($|/))` if that matters for your routing.
+
+This example is a static page for simplicity. The same `vercel.json` approach works with any framework. Rewrites to external origins are handled at Vercel's edge, before your application runs, so they apply regardless of framework and add no compute cost. If your application is Next.js, keep using `next.config` for application-internal routes, and put external-origin rewrites in `vercel.json`.
+
+## Testing before any DNS change
+
+Test everything on the production `*.vercel.app` domain first:
+
+1. Deploy phase 1 and open `https://<your-project>.vercel.app/`. You should see the legacy site, not the new app. If you see the new app's placeholder, the rewrite is not matching.
+2. Spot-check a handful of deep paths from the legacy site, including ones with query strings.
+3. Spot-check a deep path and one with a query string using curl:
+
+```sh
+curl -sI 'https://<your-project>.vercel.app/some-path?ref=test'
+```
+
+If the retired domain is already added to the project, check its redirect with `curl -sI 'https://retired.example.com/some-path'` once its DNS resolves to Vercel; expect a 308 and a `Location` header pointing at the new domain with the same path.
+
+4. Move the production domain to Vercel (days before go-live, per phase 1) and confirm visitors see no change. DNS records to point at Vercel are shown in the project's **Settings → Domains** when you add the domain.
+5. On go-live day, deploy the go-live config. Verify `en-in/` serves the new app and other paths still serve legacy content.
+
+`public/index.html` in this repo is a placeholder page that says as much. It is what you see whenever the rewrite is not active.
+
+## Retiring the old domain
+
+The permanent redirect and noindex header for the retired hostname ship in `vercel.go-live.json`. When an old domain should stop serving entirely and its traffic should land on the new site, add it to the Vercel project and use a hostname-scoped redirect plus a noindex header, so visitors land in the right place and search engines stop ranking the old URLs. See the go-live config above for the pattern.
+
+The `has` / `host` condition scopes both rules to that hostname only, so other domains and preview URLs are untouched. Status code 308 tells search engines the move is permanent. If the old domain's retirement is not decided yet, move the `redirects` and `headers` blocks out of `vercel.json` and add them in a separate deploy once it is.
 
 ## Third-party CDN in front of Vercel
 

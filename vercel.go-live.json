@@ -5,5 +5,20 @@
       "source": "/:path((?!en-in/).*)",
       "destination": "https://legacy.example.com/:path*"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "retired\\.example\\.com" }],
+      "destination": "https://new.example.com/en-in/:path*",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "retired\\.example\\.com" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
+    }
   ]
 }
